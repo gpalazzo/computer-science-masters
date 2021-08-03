@@ -13,32 +13,52 @@ Subject to:
 """
 
 # imports
-from pulp import LpMinimize, LpProblem, LpVariable, LpStatus, LpConstraint
+from pulp import LpMinimize, LpProblem, LpVariable, LpStatus
 
 # model creation
 lp_model = LpProblem(name="diet-problem-test", sense=LpMinimize)
 
 # decision variables
-decision_var_x = LpVariable(name="x", lowBound=0)
-decision_var_y = LpVariable(name="y", lowBound=0)
-decision_var_z = LpVariable(name="z", lowBound=0)
-
-# constraints
-lp_model.addConstraint(
-    2 * decision_var_x + 3 * decision_var_y + 7 * decision_var_z >= 10
-)
-lp_model.addConstraint(
-    4 * decision_var_x + 2 * decision_var_y + 1 * decision_var_z >= 15
-)
-lp_model.addConstraint(
-    1 * decision_var_x + 8 * decision_var_y + 1 * decision_var_z >= 10
-)
-lp_model.addConstraint(
-    3 * decision_var_x + 1 * decision_var_y + 1 * decision_var_z >= 8
+lp_model.addVariables(
+    [
+        LpVariable(name="x0", lowBound=0),
+        LpVariable(name="x1", lowBound=0),
+        LpVariable(name="x2", lowBound=0),
+    ]
 )
 
 # objective function
-lp_model.setObjective(20 * decision_var_x + 10 * decision_var_y + 16 * decision_var_z)
+lp_model.setObjective(
+    20 * lp_model.variables()[0]
+    + 10 * lp_model.variables()[1]
+    + 16 * lp_model.variables()[2]
+)
+
+# constraints
+lp_model.addConstraint(
+    2 * lp_model.variables()[0]
+    + 3 * lp_model.variables()[1]
+    + 7 * lp_model.variables()[2]
+    >= 10
+)
+lp_model.addConstraint(
+    4 * lp_model.variables()[0]
+    + 2 * lp_model.variables()[1]
+    + 1 * lp_model.variables()[2]
+    >= 15
+)
+lp_model.addConstraint(
+    1 * lp_model.variables()[0]
+    + 8 * lp_model.variables()[1]
+    + 1 * lp_model.variables()[2]
+    >= 10
+)
+lp_model.addConstraint(
+    3 * lp_model.variables()[0]
+    + 1 * lp_model.variables()[1]
+    + 1 * lp_model.variables()[2]
+    >= 8
+)
 
 # solve model
 lp_model.solve()
