@@ -20,4 +20,4 @@
     - installation: `sdk install java 8.0.292.hs-adpt`
 
 5. enable default solvers for PuLP
-- `pulptest`: 
+    - `pulptest` 
