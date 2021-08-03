@@ -21,3 +21,6 @@
 
 5. enable default solvers for PuLP
     - `pulptest` 
+
+6. install GLPK
+    - `brew install glpk`
