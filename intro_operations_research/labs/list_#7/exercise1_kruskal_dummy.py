@@ -26,26 +26,21 @@ counter = 1
 # passo 2
 while len(D) != 0:
 
-    print(f"Iteração: {counter}...")
+    print(f"Iteração: {counter}")
 
     tmp_menor_dist = np.inf
     tmp_menor_arco = []
 
-    print(f"Vetor C: {C}")
-    print(f"Vetor D: {D}")
-
     combinations = itertools.product(C, D)
 
     for i, comb in enumerate(combinations, 1):
-
-        print(f"Combinação {i} do produto C-D na Iteração {counter}: {comb}")
 
         if df.iat[comb] < tmp_menor_dist:
             tmp_menor_dist = df.iat[comb]
             tmp_menor_arco = comb
 
     print(
-        f"Resumo da Iteração {counter}:\nMenor dist: {tmp_menor_dist}, Arco: {tmp_menor_arco}"
+        f"Resumo da Iteração {counter}:\nMenor dist: {tmp_menor_dist}, Arco: {tmp_menor_arco}\n"
     )
 
     C.append(tmp_menor_arco[1])
@@ -54,7 +49,6 @@ while len(D) != 0:
     LT += tmp_menor_dist
 
     counter += 1
-    print("\n\n")
 
 
 print(f"Resumo:\nÁrvore geradora mínima: {T}\nDistância mínima: {LT}")
