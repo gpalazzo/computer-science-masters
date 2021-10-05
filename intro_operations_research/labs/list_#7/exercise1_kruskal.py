@@ -1,5 +1,5 @@
 """
-Solve the minimum spanning tree problem with Kruskal's algorithm
+Solve the minimum spanning tree problem using Kruskal's algorithm
 """
 
 import pandas as pd
