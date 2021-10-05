@@ -29,5 +29,11 @@ BlackLittermanModel(cov_matrix=prior_returns, absolute_views=view_dicts)
 
 breakpoint()
 
+from pypfopt import EfficientFrontier, objective_functions
+
+ef = EfficientFrontier()
+ef.add_objective(objective_functions.L2_reg)
+
 risk_models.CovarianceShrinkage().ledoit_wolf()
-BlackLittermanModel()
+
+
