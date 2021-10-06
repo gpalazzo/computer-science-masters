@@ -51,7 +51,7 @@ class Grafo:
                     self.parente[root2] = root1
                     self.rank[root1] += 1
 
-        print("\nAreas da árvore geradora mínima :", end=" ")
+        print("\nArestas da árvore geradora mínima:", end="\n")
         custo = 0
         for aresta in self.resultado:
             print(
@@ -62,10 +62,10 @@ class Grafo:
                 + "]("
                 + str(aresta.distancia)
                 + ")",
-                end=" ",
+                end="\n",
             )
             custo += aresta.distancia
-        print("\nCusto da árvore geradora mínima : " + str(custo))
+        print("\nCusto da árvore geradora mínima: " + str(custo))
 
 
 def gerar_arestas(df: pd.DataFrame) -> List[Arestas]:
