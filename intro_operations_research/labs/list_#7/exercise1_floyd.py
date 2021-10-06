@@ -1,27 +1,25 @@
 """
-Find minimum distance between pair of nodes using Floyd's algorithm
+Encontra a distancia minima entre todos os nos
 """
 
 
 import pandas as pd
-from typing import List
 
 
-# Algorithm
-def floyd(G):
+def Floyd(distancias):
 
-    dist = list(map(lambda p: list(map(lambda q: q, p)), G))
+    dist = list(map(lambda p: list(map(lambda q: q, p)), distancias))
 
-    # Adding vertices individually
+    # loop incremental entre todos os nos
     for r in range(QTD_NOS):
         for p in range(QTD_NOS):
             for q in range(QTD_NOS):
                 dist[p][q] = min(dist[p][q], dist[p][r] + dist[r][q])
-    sol(dist)
+
+    mostra_output(dist)
 
 
-# Printing the output
-def sol(dist):
+def mostra_output(dist):
     for p in range(QTD_NOS):
         for q in range(QTD_NOS):
             if dist[p][q] == INF:
@@ -31,15 +29,15 @@ def sol(dist):
         print(" ")
 
 
-def parse_generate_edges(_df: pd.DataFrame):
+def gerar_arestas(_df: pd.DataFrame):
 
     return _df.to_numpy().tolist()
 
 
 df = pd.read_csv("exercise1.csv")
-QTD_NOS = 15
-INF = 9999
+QTD_NOS = 15  # numero de nos (total de nos + 1)
+INF = 9999  # valor para representar infinito
 
-graph_list = parse_generate_edges(_df=df)
+lista_distancias = gerar_arestas(_df=df)
 
-floyd(graph_list)
+Floyd(lista_distancias)
