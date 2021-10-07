@@ -27,9 +27,9 @@ def parse_input(df: pd.DataFrame, total_nos: int) -> List[int]:
 
 def main():
 
-    TOTAL_NOS = 12
+    TOTAL_NOS = 6
 
-    df = pd.read_csv("exercise3.csv")
+    df = pd.read_csv("exercise2.csv")
 
     nos_entrada, nos_saida, fluxo_maximo = parse_input(df=df, total_nos=TOTAL_NOS)
 
@@ -53,8 +53,11 @@ def main():
                 )
             )
 
+        print("Source side min-cut:", max_flow.GetSourceSideMinCut())
+        print("Sink side min-cut:", max_flow.GetSinkSideMinCut())
+
     else:
-        print("Input incorreto.")
+        print("There was an issue with the max flow input.")
 
 
 if __name__ == "__main__":
