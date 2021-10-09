@@ -73,6 +73,9 @@ p.link(a, c).link(c, d).link(b, e).link(c, e).link(d, f).link(f, g).link(g, h).l
 )
 
 p.update_all()
-print(p.get_critical_path())
+
+crit_path = [str(n) for n in p.get_critical_path()]
+
+print(crit_path)
 
 print(p.duration)

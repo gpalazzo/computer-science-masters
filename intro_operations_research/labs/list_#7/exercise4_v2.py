@@ -1,8 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Mar 14 16:35:00 2019
-@author: Alfonso
-"""
 line = list()  # contains a single line
 singleElement = list()
 tasks = dict()  # contains all the tasks
