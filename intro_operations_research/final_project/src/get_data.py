@@ -1,42 +1,75 @@
 import yfinance as yf
+import pandas as pd
+import requests
+from typing import List
 
-vale = yf.Ticker("VALE3.SA")
-petr = yf.Ticker("PETR4.SA")
-ggbr = yf.Ticker("GGBR4.SA")
-csn = yf.Ticker("CSNA3.SA")
 
-vale_df = vale.history(
-    start="2020-01-01", end="2020-12-31", interval="1d"
-).reset_index()[["Date", "High", "Low"]]
+def parse_stocks_index(target_index: str = "IBXX.SA") -> List[str]:
+    """This function uses the `IBXX.SA` index only to find the companies within IBXX
 
-petr_df = petr.history(
-    start="2020-01-01", end="2020-12-31", interval="1d"
-).reset_index()[["Date", "High", "Low"]]
+    Args:
+        target_index:
 
-ggbr_df = ggbr.history(
-    start="2020-01-01", end="2020-12-31", interval="1d"
-).reset_index()[["Date", "High", "Low"]]
+    Returns:
 
-csn_df = csn.history(start="2020-01-01", end="2020-12-31", interval="1d").reset_index()[
-    ["Date", "High", "Low"]
+    """
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36"
+    }
+    response = requests.get(
+        f"https://finance.yahoo.com/quote/{target_index}/components?p={target_index}",
+        headers=headers,
+        verify=False,
+    )
+
+    df = pd.read_html(response.text)[0]
+
+    return list(set(df["Symbol"]))
+
+
+# BRAX11 é o ETF que replica a performance do IBrX-100: índice com as 100 ações mais líquidas da Bovespa
+mkt_index = "BRAX11.SA"
+top30_stocks = parse_stocks_index()
+
+# MARKET INDEX CLOSE PRICE DATA
+mkt_index_close_price = yf.download(tickers=mkt_index, period="max", interval="1d")[
+    "Adj Close"
+].reset_index()
+
+mkt_index_close_price.to_csv("../data/raw/mkt_index_price_brax11.csv", index=False)
+
+# TOP 30 IBXX (IBRX-100) STOCKS CLOSE PRICE DATA
+index_min_date = mkt_index_close_price["Date"].min()
+
+tickers_close_prices = yf.download(tickers=top30_stocks, period="max", interval="1d")[
+    "Adj Close"
+].reset_index()
+
+tickers_close_prices = tickers_close_prices[
+    tickers_close_prices["Date"] >= index_min_date
 ]
 
-vale_df.loc[:, "VALE3"] = (vale_df["High"] + vale_df["Low"]) / 2.0
-vale_df = vale_df.drop(columns=["High", "Low"])
-
-petr_df.loc[:, "PETR4"] = (petr_df["High"] + petr_df["Low"]) / 2.0
-petr_df = petr_df.drop(columns=["High", "Low"])
-
-ggbr_df.loc[:, "GGBR4"] = (ggbr_df["High"] + ggbr_df["Low"]) / 2.0
-ggbr_df = ggbr_df.drop(columns=["High", "Low"])
-
-csn_df.loc[:, "CSNA3"] = (csn_df["High"] + csn_df["Low"]) / 2.0
-csn_df = csn_df.drop(columns=["High", "Low"])
-
-final_df = (
-    vale_df.merge(petr_df, on=["Date"], how="inner")
-    .merge(ggbr_df, on=["Date"], how="inner")
-    .merge(csn_df, on=["Date"], how="inner")
+tickers_close_prices.to_csv(
+    "../data/raw/top30_stocks_price_within_brax11.csv", index=False
 )
 
-final_df.to_csv("../data/tickers.csv", index=False)
+# TOP 30 IBXX (IBRX-100) STOCKS MARKET CAPITALIZATION DATA
+mkt_cap_dict = {}
+for ticker in top30_stocks:
+    print(f"Getting market cap data for: {ticker}...")
+    stock = yf.Ticker(ticker)
+    mkt_cap_dict[ticker] = stock.info["marketCap"]
+
+
+mkt_cap_30stocks = (
+    pd.DataFrame.from_dict(mkt_cap_dict, orient="index")
+    .reset_index()
+    .rename(columns={0: "mkt_cap", "index": "ticker"})
+)
+
+mkt_cap_30stocks.to_csv(
+    "../data/raw/top30_stocks_mktcap_within_brax11.csv", index=False
+)
+
+# DADOS PARA A REGRESSÃO MÚLTIPLA
