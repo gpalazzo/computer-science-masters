@@ -12,6 +12,7 @@ ortools = "^9.1.9490"
 criticalpath = "^0.1.5"
 networkx = "^2.6.3"
 matplotlib = "^3.4.3"
+pertchart = "^0.5.1"
 
 [tool.poetry.dev-dependencies]
 black = "^21.7b0"
