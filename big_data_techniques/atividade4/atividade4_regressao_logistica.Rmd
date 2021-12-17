@@ -1,0 +1,388 @@
+---
+title: "Atividade 4: 2ª Análise (Regressão Logística)"
+author: "Grupo Cerrado: Guilherme Palazzo, Tiago Gomes, Luiz, Williamson Brigido, Carlos Eduardo e Aline Rodrigues"
+date: "02/12/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Carregando Todos os Pacotes Necessários para a análise
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+library(knitr)
+library(tinytex)
+library(echor)
+library(readr)
+library(dplyr)
+library(caret)
+library(readr)
+library(creditmodel)
+library(cramer)
+library(corrplot)
+library(factoextra)
+library(clusterSim)
+library(glmnet)
+library(woeBinning)
+library(woe)
+library(randomForest)
+library(PRROC)
+
+```
+
+# Importando o Dataset.
+**Não esquecer de mudar convenientemente o caminho do arquivo** 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+data <- read_csv("dataset(V1).csv") 
+
+```
+
+# Analisando estatística descritiva do dataset
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+summary(data)
+```
+
+# Primeiros Tratamentos dos Dados
+
+Nesta etapa realizamos os primeiros tratamentos nos dados. Nesta etapa, separamos o dataset em 3, a saber, uma parte incluindo as variáveis numéricas, outra apenas com as variáveis categóricas e a última sendo a variável dependente desta análise, cujo nome é **tem_seguro_imobiliario**.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+data = data %>% mutate_if(is.character, as.factor) # passar tudo que é caracter para factor
+
+data$proprietario_casa    = as.factor(data$proprietario_casa)# passar de numérico para factor
+data$proprietario_veiculo = as.factor(data$proprietario_veiculo)# passar de numérico para factor
+data$tem_filho            = as.factor(data$tem_filho)# passar de numérico para factor
+data$qtd_fin_imobiliario  = as.factor(data$qtd_fin_imobiliario)# passar de numérico para factor
+num_data                  = data %>% dplyr::select(where(is.numeric))#Selecionando apenas as variáveis numéricas
+factor_data               = data %>% dplyr::select(where(is.factor))#Selecionando apenas as variáveis categóricas
+factor_data               = factor_data %>% dplyr::select (-c(nome_sobrenome))# excluindo a chave primária da análise
+y                         = as.data.frame(num_data$tem_seguro_imobiliario) # Destacando a variável dependente desta análise
+y                         = y %>% rename('tem_seguro_imobiliario' = 'num_data$tem_seguro_imobiliario')# Renomeando a variável  
+num_data                  = num_data %>% dplyr::select (-c(tem_seguro_imobiliario))# excluindo a variável dependente "y"
+
+```
+
+Plotando o gráfico de barras da variável dependente **tem_seguro_imobiliario**. De acordo com o gráfico podemos verificar que os dados estão levemente desequilibrados, sendo que a massa está concentrada nos clientes que não obtiveram o seguro imobiliário
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+ggplot(data, aes(factor(tem_seguro_imobiliario),
+fill = factor(tem_seguro_imobiliario))) +
+geom_bar()
+
+```
+
+# Análise de Importância das Variáveis Categóricas
+
+Nesta etapa faremos a seleção das variáveis categóricas que são mais importantes para a variável dependente. Para isto, faremos uma análise de correlação de **Cramer V**, de modo que possamos identificar possíveis colinearidades. 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+cramer_v = char_cor(factor_data, c('qtd_fin_imobiliario', 'classe_ltv', 'estado', 'estado_civil', 'profissao', 'regiao', 'sexo', 'proprietario_casa', 'proprietario_veiculo', 'tem_filho') )
+
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(cramer_v, method="color", col=col(200), number.cex= 7/ncol(cramer_v), 
+type="upper", order="hclust", addCoef.col = "black",tl.col="black", tl.srt=45)
+
+```
+
+Analisando a matriz de correlações acima, conseguimos identificar algumas variáveis com um grau de correlação razoável. Com o intuito de eliminar essas colinearidades, faremos a eliminação de algumas variáveis que estão correlacionadas com outras variáveis. Neste caso, utilizaremos como valor de corte correlações com valores acima de **0.4**. Para isto, faremos uso do valor do **Information Value (IV)**, que é calculado a partir da técnica de **Weight of Evidence (WoE)**. Desta forma, para duas variáveis que possuem um valor de correlação acima de 0.4, nós eliminamos a que tiver menor poder preditivo, ou seja, a que tiver o menor IV.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+factor_data_y = as.data.frame(cbind(y,factor_data))
+binning = woe.binning(factor_data_y, target.var = 'tem_seguro_imobiliario',
+                      pred.var = c('qtd_fin_imobiliario', 'classe_ltv', 'estado',
+                                   'estado_civil', 'profissao', 'regiao', 'sexo',
+                                   'proprietario_casa', 'proprietario_veiculo',
+                                   'tem_filho'))
+
+var = as.character(binning[,1]) 
+Information_Value  = as.numeric(binning[,3])
+iv_data = as.data.frame(cbind(var,Information_Value))
+
+ggplot(data = iv_data, mapping = aes(x = reorder(var, as.numeric(Information_Value)), as.numeric(Information_Value))) + 
+geom_bar(stat = "identity") + coord_flip() 
+
+```
+
+Com auxílio do gráfico de barras dos valores de IV, eliminamos as variáveis com menores poderes preditivos e que causam multicolinearidades. Neste caso, selecionamos as seguintes variáveis categóricas: **estado, estado_civil, profissao, e proprietario_veiculo**, sendo a profissão a variável categórica com maior poder preditivo, ou seja, a variável com maior valor de IV. Abaixo, graficamos novamente a matriz de correlações destas variáveis selecionadas, de modo a certificar que as multicolinearidades foram de fato eliminadas.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+cramer_v_final = char_cor(factor_data, c('estado', 'estado_civil', 'profissao', 'proprietario_veiculo'))
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(cramer_v_final, method="color", col=col(200), number.cex= 7/ncol(cramer_v_final), 
+type="upper", order="hclust", addCoef.col = "black",tl.col="black", tl.srt=45)
+
+factor_data_final = factor_data %>% dplyr::select (-c(proprietario_casa, classe_ltv, qtd_fin_imobiliario, sexo, regiao))
+
+```
+
+Após a remoção de multicolinearidades e das variáveis categóricas com menores poderes preditivos, partiremos para uma última etapa no tratamento destas variáveis selecionadas. Apesar de termos selecionado apenas 4 variáveis, a saber, **estado, estado_civil, profissao, e proprietario_veiculo**, mesmo assim continuamos com uma dimensionalidade bastante elevada, visto que a variável  **estado** possui 22 níveis e apenas a variável **profissao** possui nada mais nada menos que 95 nível, ou seja, mesmo tendo selecionado apenas 4 variáveis categóricas, estaremos trabalhando com mais de 100 níveis. Neste caso, podemos partir para um processo denominado **Coarse Classing**, onde novamente utilizamos o valor de WoE para cada nível. Como o valor de WoE mede a informação que determinado nível guarda da sua respectiva variável categórica, temos que níveis com valores de WoE aproximados guardam a mesma quantidade de informação, então pode-se agrupar tais níveis. Neste caso, todos os níveis com valores parecidos de WoE são agrupados, diminuindo assim a quantidade de níveis e, portanto, diminuindo a dimensionalidade do modelo. Tal processo é denominado **Coarse Classing**. Dito isso, partiremos abaixo para o processo **Coarse Classing** das variáveis selecionadas **estado, estado_civil, profissao, e proprietario_veiculo**:
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+factor_data_final_y   = as.data.frame(cbind(y,factor_data_final)) # juntando variáveis explic. com a var. resposta
+woe_binning           = woe.binning(factor_data_final_y, "tem_seguro_imobiliario", factor_data_final_y) # aplicando técnica de WoE
+coarse_classing       = woe.binning.deploy(factor_data_final_y, woe_binning, add.woe.or.dum.var = "woe")# Realizando Coarse Classing
+coarse_classing_final = coarse_classing  %>% dplyr::select (c('profissao.binned', 'estado_civil.binned',
+'estado.binned', 'proprietario_veiculo.binned', 'tem_filho.binned'))# Finalizando variáveis categóricas
+
+```
+
+
+Portando, com o processo **Coarse Clasing** realizado acima, conseguimos diminuir substancialmente a dimensionalidade do modelo, com perda miníma de informação.
+
+
+# Análise de Importância das Variáveis Numéricas
+
+Após selecionarmos as variáveis categóricas, repetiremos agora o memso processo, porém, que desta vez, para as variáveis numéricas. Neste caso, utilizaremos 4 técnicas diferentes com a finalidade de medir o poder preditivo das variáveis numéricas, a saber, **Método Stepwise**, **Random Forest**, **Lasso** e **Information Value**. Porém, antes de fazermos quaisquer análises com as variáveis núméricas, submeteremos estas a um processo de normalização, onde subtraímos a variável pela sua média, e em seguida dividimos pelo seu desvio padrão. Com isso, obtemos um novo conjunto de variáveis com distribuição normal de média zero e desvio Padrão igual a um. Este procedimento é muito importante e necessário, pois mantém todas as características qualitativas das variáveis, e as deixam com escalas semelhantes. A aplicação de algumas técnicas, tal quais as técnicas de componentes principais e de clusterização, por exemplo, sem a realização deste procedimento, pode interferir consideravelmente nos resultados, já que estas técnicas são extremamente sensíveis às escalas das variáveis. Diante disto, faremos abaixo a normalização de todas as variáveis numéricas:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+norm_data = as.data.frame(scale(num_data))# normalizando os dados media=0, sd = 1
+
+```
+
+## Método Stepwise
+
+Após realizado o processo de normalização, partiremos para as técnicas de seleção de variáveis numéricas, iniciando pela análise do Método Stepwise, que neste caso, seleciona as seguintes variáveis:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+norm_data_y = as.data.frame(cbind(y,norm_data))# juntendo dados numericos e y
+
+# Step 1: Define base intercept only model
+base.mod = lm(as.numeric(y$tem_seguro_imobiliario) ~ 1 , data=norm_data_y)  
+
+# Step 2: Full model with all predictors
+all.mod  = lm(as.numeric(y$tem_seguro_imobiliario) ~.  , data=norm_data_y) 
+
+# Step 3: Perform step-wise algorithm. direction='both' implies both forward and backward stepwise
+step_wise = step(base.mod, scope = list(lower = base.mod, upper = all.mod), direction = "both", trace = 0, steps = 1000)  
+
+# Step 4: Get the shortlisted variable.
+shortlistedVars = names(unlist(step_wise[[1]])) 
+shortlistedVars = shortlistedVars[!shortlistedVars %in% "(Intercept)"] # remove intercept
+
+# Show
+print(shortlistedVars)
+
+```
+
+## Método Random Forest
+
+Em seguida, realizamos a análise de Random Forest, de modo a analisarmos quais variáveis numéricas possuem os maiores poderes preditivos segundo esta técnica:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+rf <- randomForest(tem_seguro_imobiliario ~., data = norm_data_y, importance = TRUE,  ntree=300)
+
+import = as.data.frame(rf$importance)
+import$`%IncMSE` = as.numeric(import$`%IncMSE`)
+
+ggplot(data = import, mapping = aes(x = reorder(rownames(import), import$`%IncMSE`), import$`%IncMSE`)) + 
+geom_bar(stat = "identity") + coord_flip() 
+
+```
+
+A figura acima mostra a ordem de importância das variáveis numéricas, segundo a técnica de Random Forest. De acordo com esta técnica, as variáveis com os maiores poderes preditivos são **valor_fundos_bancarios**, **retirada_mensal** e **cc_saldo_atual**. Já as variáveis com menores poderes preditivos são **qtd_credit_kiosk**, **credit_card_limite** e **salario**.
+
+## Regressão Lasso
+
+Dando prosseguimento às análises, seguimos abaixo com a técnica de Regressão Lasso:
+
+```{r  echo=TRUE, message=FALSE, warning=FALSE}
+
+
+
+
+lasso = cv.glmnet(as.matrix(norm_data), as.matrix(y), family='binomial', alpha=1, standardize=TRUE, type.measure='auc')
+
+
+coef <- as.data.frame(round(as.matrix(coef(lasso, s=lasso$lambda.min)), 2))
+coef = coef %>% rename(Importance_Feature = 's1')# renomeia var. para Importance_Feature
+
+ggplot(data = coef, mapping = aes(x = reorder(rownames(coef), Importance_Feature), Importance_Feature)) + 
+geom_bar(stat = "identity") + coord_flip() 
+
+
+
+
+```
+
+## Método Information Value
+
+Finalmente, realizamos a aplicação da técnica de Information Value, tal qual foi também reralizado anteriormente com as variáveis categóricas. Para isto, teremos que aplicar a técnica de Weight of Evidence (WoE), que existe que façamos um processo de categorização nas variáveis numéricas. Neste caso, para realizarmos o processo de categorização, realizamos o processo **Binning**, que consiste em separar cada variável numérica em 10 partes limitadas pelos seus 10 percentis. Logo, 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+norm_data_y = as.data.frame(cbind(y,norm_data))
+binning = woe.binning(norm_data_y, target.var = 'tem_seguro_imobiliario',
+                      pred.var = c("cc_saldo_atual",  "cc_saldo_medio", "credit_card_limite", "qtd_mensal_cheques",
+                                   "qtd_pag_automovel",  "qtd_trans_atm",         
+                                   "qtd_trans_kiosk", "qtd_trans_teller",  "qtd_trans_web",
+                                   "retirada_mensal", "valor_fin_imobiliario",  "valor_fundos_bancarios", "ltv",
+                                   "idade", "n_dependentes", "salario", "tempo_cliente_anos" )) 
+
+var = as.character(binning[,1]) 
+Information_Value  = as.numeric(binning[,3])
+iv_data = as.data.frame(cbind(var,Information_Value))
+
+ggplot(data = iv_data, mapping = aes(x = reorder(var, as.numeric(Information_Value)), as.numeric(Information_Value))) + 
+geom_bar(stat = "identity") + coord_flip() 
+
+```
+
+Após a aplicação das 4 técnicas realizadas acima, faremos uma seleção das variáveis mais importantes em termos de poder preditivo. Para isso, selecionamos as variáveis que foram mais votadas como as melhores e eliminamos as mais votadas como as piores. Diante disto, podemos, com uma certa confiânça, eliminar as variáveis **ltv**, **salario**, **qtd_trans_kiosk** e **credit_card_limite**.
+
+# Análise de Componentes Principais
+
+Na seção anterior, aplicamos 4 técnicas diferentes de seleção de variáveis, as quais apontaram as variáveis **ltv**, **salario**, **qtd_trans_kiosk** e **credit_card_limite** como as menos preditivas, permitindo eliminá-las previamente da análise. Entretanto, hora nenhuma fizemos uma análise de multicolinearidade e, além disto, podem haver outras variáveis com pouco poder preditivo que as 4 técnicas não foram capazes de identificar. Para tentarmos resolver tanto o problema de multicolinearidade e ainda melhor o processo de redução de dimensionalidade, podemos aplicar o método de **Análise  de Componentes Principais (PCA)**. Tal método é muito difundido em tratamentos de problemas de colinearidades e de alta dimensionalidasde, já que ele é capaz de projetar todas as variáveis em direções ortogonais e que explicam de forma máxima a variância total das variáveis independentes. Como todas as variáveis são projetads em direções ortogonais, o problema de multicolinearidade é resolvido e, além disso, por conseguir projetar as variáveis nas direções que mais explicam a variância total, ainda conseguimos eliminar todas as direções que não explicam, ou que explicam muito pouco a variância do sistema, colaborando assim com o processo de redução de dimensionalidade.
+
+Antes de tudo, iremos verificar o grau de multicolinearidade existente entre as variáveis numéricas selecionadas na seção anterior. Neste caso, utilizaremos a técnica mais simples e uma das mais eficiêntes para esta tarefa, que é a **Correlação de Pearson**.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+norm_data_final = norm_data %>% dplyr::select (-c('ltv', 'salario','qtd_trans_kiosk',
+'credit_card_limite')) #Variáveis numéricas filtradas pela seção anterior
+pearson = cor(norm_data_final, method = "pearson")
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(pearson, method="color", col=col(200), number.cex= 8.5/ncol(pearson), 
+type="upper", order="hclust", addCoef.col = "black",tl.col="black", tl.srt=45)
+
+```
+
+Conforme podemos verificar pelo pela matriz de correlações acima, de fato há traços de correlação entre as variáveis independentes numéricas normalizadas, a qual pode ser completamente eliminada pela aplicação da **PCA**. Resumidamente, tal técnica consiste em projetar as variáveis originais na direção dos autovetores da matriz de covariância, obtendo assim um novo conjunto de variáveis que são ortogonais, e portanto não colineares, e que, além disto, explicam de forma máxima a variância total. Neste caso, os percentuais das variâncias explicadas por cada autovetor, são mensuradas pelos seus respectivos autovalores. Portanto, segue abaixo os cálculos da matriz de covariância das variáveis independentes numéricas normalizadas, bem como seus autovetores e autovalores.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+covar_matrix = cov(norm_data_final)# matriz de covarincia
+
+eigen = eigen(covar_matrix) # obtençao auto valores e auto vetores
+eigen_vector = eigen$vectors # autovetores, ou seja, componentes principais
+eigen_values = eigen$values # autovalores
+
+print("Autovalores =")
+eigen_values
+print("Autovetores =") 
+head(eigen_vector)
+
+```
+
+Agora, como próximo passo, projetamos as variáveis numéricas normalizadas nas direções dos autovetores, ou seja, 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+new_norm_data_final = t(eigen_vector)%*%t(as.matrix(norm_data_final))# projetando as variaveis originais.
+new_norm_data_final = t(new_norm_data_final) # dados projetados
+new_norm_data_final = as.data.frame(new_norm_data_final)# passando variáv. para tipo data frame
+
+head(new_norm_data_final)
+```
+
+Acima, podemos visualizar as novas variáveis numéricas projetadas ao longo dos autovetores da matriz de covariância. Tais variáveis são denominadas **Componentes principais**, as quais são combinações lineares das variáveis antigas e explicam de forma máxima a variância total. Além disto, este novo conjunto de variáveis são ortogonais e, portanto, eliminamos quaisquer problemas de multicolinearidade, conforme pode ser verificado na matriz de correlações de Pearson abaixo:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+new_cor = cor(new_norm_data_final, method = "pearson")
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(new_cor, method="color", col=col(200), number.cex= 7/ncol(new_cor), 
+type="upper", order="hclust", addCoef.col = "black",tl.col="black", tl.srt=45)
+
+```
+
+Portanto, analisando a matriz de correlações acima, verificamos que de fato quaisquer problemas de multicolinearidades foram completamente eliminados.
+
+Adicionalmente, conforme já mencionado, por meio dos autovalores da matriz de covariância podemos mensurar o percentual de explicação da variância que cada direção de autovetor (e também das componentes principais) guarda. Para isto, visualizamos o seguinte gráfico:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+explain_variance = c()
+j=1
+for (i in eigen_values) {
+  explain_variance[j] = i/sum(eigen_values) 
+  j=j+1
+}
+
+plot(explain_variance, xlab = 'Eigenvalue Number', ylab = 'Percentual de Variância Explicada', main = 'Scree Graph')
+lines(explain_variance) 
+abline(v = 8, col="red", lwd=3, lty=2)
+
+```
+
+O gráfico acima é chamado de **Scree Plot**, o qual mede por meio dos autovalores o percentual de variância explicada por cada componente principal. Neste caso, nos beneficiamos da segunda propriedade da técnica PCA, que é a redução de dimensionalidade. Isso porque, conforme podemos verificar abaixo, temos que as 8 primeiras componentes principais explicam mais de 90% da variância total. De fato, 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+print("Percentual de variância explicada pelas 8 primeiras componentes principais = ")
+sum(explain_variance[1:8]) # os 8 primeiros componentes principais explica mais de 90% da variancia total
+
+```
+
+Desta forma, podemos eliminar as 5 últimas componentes principais sem perda significativa de informação, já que mesmo assim, continuamos com mais de 90% da informação total. Logo, por meio de uma única técnica, nos beneficiamos por eliminar completamente as multicolinearidades e por diminuirmos ainda mais a dimensionalidade do problema. Portanto, a prtir de agora, trabalharemos com as 8 primeiras componentes principais e mais as variáveis categóricas selecionadas anteriormente.
+
+# Regressão Logística
+
+Feitas todas as análises e tratamento nas variáveis numéricas e categóricas, estamos agora quase aptos a aplicar o modelo preditivo de Regressão Logística, que se mostra adequado ao nosso problema, dado que nossa variável dependente é dicotômica. Para isto, precisamos realizar mais uma etapa nas variáveis categóricas, que consiste em transformá-las em variáveis "Dummy". Neste caso, utilizamos a técnica de "dummificação"chamada **One-Hot-Encoding**, que consite em transfomar as variáveis categóricas em uma matriz esparsa de "0" e "1", onde a presença de valor de um nível da variável categórica recebe valor "1" e a ausência recebe valor "0". Logo,
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+dummy = dummyVars(" ~ .", data = coarse_classing_final)
+one_hot_encoding = as.data.frame(predict(dummy, newdata = coarse_classing_final))
+
+```
+
+Portanto, agora estamos completamente aptos a aplicar a Regressão Logística nos dados, os quais consistem nas variáveis categóricas selecionadas e "dummificadas", nas variáveis numéricas transformadas em componentes principais e da variável dependente **tem_seguro_imobiliario**, ou seja,
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+final_data = as.data.frame(cbind(y, new_norm_data_final, one_hot_encoding)) # Dataset final
+
+```
+
+Antes da aplicação da técnica de Regressão Logística, iremos separar uma porção do dataset final em um conjunto de treino, consitindo em 80% do dataset final e um conjunto de teste, consistindo nos 20% restantes, ou seja,
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+a = createDataPartition(y=final_data$tem_seguro_imobiliario, p=0.70, list=FALSE)
+
+treino  = final_data[a,]  # conjunto de treino
+teste   = final_data[-a,] # conjunto de teste
+
+```
+
+Após separarmos os dados em "treino" e "teste", partiremos para o treinamento do nosso modelo de Regressão Logística:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+model       = glm(treino$tem_seguro_imobiliario ~., family=binomial(link='logit'), data = treino)
+predictions = predict(model, teste,  type='response')
+predict = ifelse(predictions > 0.5,1,0)# atribuindo "0" para valores menores que 0.5 e "1" para maiores que 0.5
+confusionMatrix(as.factor(predict), as.factor(teste$tem_seguro_imobiliario))
+
+```
+
+Analisando a matriz de confusão e as métricas de assertividade do modelo, podemos considerar que o modelo em questão possui uma boa assertividade,  dado que apresentou uma acurária de mais de 84%, um percentual de verdadeiros positivos de 88%, um percentual de verdadeiros negativos de mais de 78% e uma sensibilidade de mais de 93%. Além disto, o teste estatístico de Mcnemar aponta para a rejeição da Hipótese nula de homogeneidade da matriz de confusão a um nível de significância de 1%, ou seja, os valores preditos pelo modelo não foram devidos ao acaso.
+
+Além de todas estas métricas de assertividade, vale a pena conferir uma das métricas mais famosas utilizadas na validação de Regressão Logística, que é a chamada **AUC**, que nada mais é que a área abaixo da curva **ROC**. Quanto mais próximo de "1" for o valor de AUC, mais assertivo é o modelo.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+PRROC_obj <- roc.curve(scores.class0 = predictions, weights.class0=teste$tem_seguro_imobiliario, curve=TRUE)
+plot(PRROC_obj)
+
+```
+
+
+Analisando o AUC acima, podemos notar que seu valor é de (AUC ~ 0.90), o que indica que o modelo é bastante eficiente na tarefa de discriminar os clientes adquirem o seguro imobiliário, daqueles que não adquirem.
+
