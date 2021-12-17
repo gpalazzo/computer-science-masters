@@ -1,0 +1,213 @@
+---
+title: "Atividade 4: ETL"
+author: "Grupo Cerrado: Guilherme Palazzo, Tiago Gomes, Luiz, Williamson Brigido, Carlos Eduardo e Aline Rodrigues"
+date: "02/12/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Objetivo
+Este documento tem por objetivo explicitar os tratamentos realizados nos dados
+até a geração da master table para os modelos de análise.
+
+## Explicação da lógica de ETL
+1. Data loading: carregamento dos dados crus (`raw layer`) do HBase para um 
+data.frame.
+
+2. Data preparation: realiza ajustes nos dados visando a criação da master
+table e recebe insights do tópico 3 para entender a melhor maneira de ajustar.
+Além disso, possui uma divisão lógica em layers para isolar diferentes tipos
+de tratamentos nos dados. A descrição dos tratamentos será explicada em 
+detalhes em cada um dos layers.
+    - `intermediate layer`: consome do `raw` e não altera número de linhas dos dados
+    - `primary layer`: consome do `intermediate` e não altera número de linhas  dos dados
+    - `feature layer`: consome do `primary` e pode alterar a quantidade de linhas dos dados
+
+3. Exploratory data analysis (EDA): realiza estatística descritiva e plots das
+séries de dados para entender melhor as distribuições e obter insights visuais.
+Normalmente o EDA é realizado com os dados oriundos do `primary` visto que já
+possuem uma certa padronização e geram os insights para o `feature`.
+
+## Setup base
+- instalação de bibliotecas
+```{r message=FALSE}
+#install.packages(c("RJDBC", "dplyr", "moments"))
+```
+
+- import de bibliotecas
+```{r message=FALSE}
+library(RJDBC)
+library(dplyr)
+library(moments)
+library(data.table)
+```
+
+## Data Loading
+### Conexão com HBase
+```{r echo = T}
+driverh <- JDBC(driverClass = "cdata.jdbc.apachehbase.ApacheHBaseDriver",
+                classPath = "/home/hadoop/CData/lib/cdata.jdbc.apachehbase.jar",
+                identifier.quote = "'")
+
+chbase <- dbConnect(driverh, "jdbc:apachehbase:Server=<ip_address>;Port=<port>")
+
+# teste de conexão
+dbListTables(chbase)
+```
+
+### Raw data loading
+```{r echo = T}
+raw_df <- dbGetQuery(chbase, "SELECT financeiro:cc_saldo_atual,
+                        financeiro:cc_saldo_medio,
+                        financeiro:credit_card_limite,
+                        financeiro:qtd_fin_imobiliario,
+                        financeiro:qtd_mensal_cheques,
+                        financeiro:qtd_pag_automovel,
+                        financeiro:qtd_trans_atm,
+                        financeiro:qtd_trans_kiosk,
+                        financeiro:qtd_trans_teller,
+                        financeiro:qtd_trans_web,
+                        financeiro:retirada_mensal,
+                        financeiro:valor_fin_imobiliario,
+                        financeiro:valor_fundos_bancarios,
+                        ltv:classe_ltv,
+                        ltv:ltv,
+                        pessoal:estado,
+                        pessoal:estado_civil,
+                        pessoal:idade,
+                        pessoal:n_dependentes,
+                        pessoal:nome,
+                        pessoal:profissao,
+                        pessoal:proprietario_casa,
+                        pessoal:proprietario_veiculo,
+                        pessoal:regiao,
+                        pessoal:salario,
+                        pessoal:sexo,
+                        pessoal:sobrenome,
+                        pessoal:tem_filho,
+                        seguro:tem_seguro_imobiliario,
+                        seguro:tempo_cliente_anos
+                        FROM customer")
+
+# verificando 2 primeiras e 2 últimas colunas do dataframe
+head(raw_df[c("financeiro:cc_saldo_atual",
+                  "financeiro:cc_saldo_medio",
+                  "seguro:tem_seguro_imobiliario",
+                  "seguro:tempo_cliente_anos")])
+```
+
+## Data preparation
+### Intermediate layer: tratamentos comuns realizados nesse layer
+- deleta colunas não utilizadas (esse delete é dummy por enquanto)
+- ajusta nome de colunas
+  - remove acentos
+  - coloca tudo lowercase
+  - remove caracteres especiais, alfanuméricos e similares
+  - remove separadores desnecessários para identificação da coluna
+```{r echo = T}
+# cria cópia do objeto para não sobrescrever raw data
+int_df <- copy(raw_df)
+
+for (i in colnames(int_df)){
+  col_split <- strsplit(i, ":")
+  new_col_name = col_split[[1]][-1]
+  names(int_df)[names(int_df) == i] <- new_col_name
+}
+
+# verificando 2 primeiras e 2 últimas colunas do dataframe
+head(int_df[c("cc_saldo_atual",
+              "cc_saldo_medio",
+              "tem_seguro_imobiliario",
+              "tempo_cliente_anos")])
+```
+
+### Primayer layer: tratamentos comuns realizados nesse layer
+- mudança de booleano string para 0 ou 1
+- conversão de tipos de dados
+- trocar vírgula por ponto em colunas float
+- cria novas colunas como possível chave
+- parsing de colunas string tudo para lowercase e remove caracteres especiais, acentos, entre outros
+```{r echo = T}
+# cria cópia do objeto para não sobrescrever tratamentos
+prm_df <- data.frame(int_df)
+
+# troca string booleana Yes/No para 1/0
+prm_df$tem_seguro_imobiliario <- ifelse(prm_df$tem_seguro_imobiliario=="Yes",1,0)
+#verifica ajuste de booleano string para número
+unique(prm_df["tem_seguro_imobiliario"])
+
+# verifica tipos de dados das colunas
+## aparentemente está tudo ok
+str(prm_df)
+
+# checa se tem vírgula em alguma coluna numérica
+##  não tem
+lapply(prm_df[ , purrr::map_lgl(prm_df, is.numeric)], function(x) any(grepl(",", x)))
+
+# concatena nome_sobrenome para plot e possível chave
+prm_df$nome_sobrenome <- paste(prm_df$nome, prm_df$sobrenome, sep = "_")
+
+# deleta coluna de nome e sobrenome
+prm_df <- select(prm_df, -c("nome", "sobrenome"))
+
+# seleciona colunas string para tratamento
+for (col in colnames(prm_df[ , purrr::map_lgl(prm_df, is.character)])){
+  prm_df[[col]] <- tolower(prm_df[[col]])
+}
+
+# visualização dos dados após ajustes
+head(prm_df)
+
+# colunas que precisa de explicação para entender
+##   qtd_fin_imobiliario, proprietario_casa
+```
+
+### EDA
+- estatística descritiva
+  - verifica nulos
+  - verifica valores de estatística descritiva para ver quais colunas plotar a fim de entender possíveis ajustes no dado
+    ex: log, skewness, entre outros
+```{r echo = T}
+# cria cópia do objeto para não sobrescrever tratamentos
+eda_df <- data.frame(prm_df)
+
+# estatística descritiva
+## nenhum valor nulo
+summary(eda_df)
+
+# colunas candidatas para ajuste ao analisar o summary
+## plots de frequência
+hist(eda_df$cc_saldo_atual)
+hist(eda_df$cc_saldo_medio)
+hist(eda_df$qtd_pag_automovel)
+hist(eda_df$qtd_trans_web)
+hist(eda_df$valor_fin_imobiliario)
+hist(eda_df$valor_fundos_bancarios)
+
+## exemplo da coluna cc_saldo_atual
+hist(eda_df$cc_saldo_atual)
+skewness(eda_df$cc_saldo_atual)
+
+## exemplo de variação de skewness de acordo com tratamento aplicado
+skewness(sqrt(eda_df$cc_saldo_atual))
+skewness(log10(eda_df$cc_saldo_atual))
+skewness(1 / (eda_df$cc_saldo_atual))
+```
+
+### Feature layer: tratamentos comuns realizados nesse layer
+- tratamento de nulos
+- ajuste de dados oriundos do EDA
+- feature engineering
+```{r echo = T}
+# cria cópia do objeto para não sobrescrever tratamentos
+fte_df <- data.frame(prm_df)
+
+# tratamento de skewness
+fte_df$cc_saldo_atual_log10 <- log10(fte_df$cc_saldo_atual)
+
+head(fte_df)
+
+```
