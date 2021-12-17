@@ -1,0 +1,84 @@
+---
+title: "Projeto_Cerrado"
+author: "grupoCerrado"
+date: "09/12/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Carregando Todos os Pacotes Necessários para a análise
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+library(knitr)
+library(tinytex)
+library(echor)
+library(readr)
+library(dplyr)
+library(caret)
+library(readr)
+library(creditmodel)
+library(cramer)
+library(corrplot)
+#library(factoextra)
+library(clusterSim)
+library(glmnet)
+library(woeBinning)
+library(woe)
+library(randomForest)
+library(PRROC)
+library(formatR)
+library(RJDBC)
+library(tidyr)
+```
+
+# Importanto a base de dados
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+df = read.csv("/home/carlos/incendios.csv")
+df = df %>% drop_na()
+
+incendio     = df %>% filter(cerrado.incendio == 1)
+nao_incendio = df %>% filter(cerrado.incendio == 0)
+
+nao_incendio = sample_n(nao_incendio,100)
+data   = as.data.frame(rbind(incendio,nao_incendio))
+
+```
+
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+ggplot(data, aes(factor(cerrado.incendio),
+fill = factor(cerrado.incendio))) +
+geom_bar()
+
+```
+
+
+
+## Método Random Forest
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+rf <- randomForest(cerrado.incendio ~., data = data, importance = TRUE,  ntree=100)
+
+import = as.data.frame(rf$importance)
+import$`%IncMSE` = as.numeric(import$`%IncMSE`)
+
+ggplot(data = import, mapping = aes(x = reorder(rownames(import), import$`%IncMSE`), import$`%IncMSE`)) + 
+geom_bar(stat = "identity") + coord_flip() 
+
+```
+
+
+
+
+
+
+
+

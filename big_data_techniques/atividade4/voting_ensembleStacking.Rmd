@@ -1,0 +1,296 @@
+---
+title: "Atividade 4: 4ª Análise(XGBoost  - Ensemble Stacking)"
+author: "Grupo Cerrado: Guilherme Palazzo, Tiago Gomes, Luiz, Williamson Brigido, Carlos Eduardo e Aline Rodrigues"
+date: "24/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Lendo o arquivo
+```{r}
+#install.packages("readr", dependencies = TRUE)
+library(readr)
+df <- read_csv("dataset(V1).csv")
+```
+# Análise exploratória 
+
+## Tipos de dados
+```{r}
+str(df)
+```
+## Sumário
+```{r, echo=TRUE}
+summary(df)
+```
+## Balanço da população
+<p>
+No geral, quando vamos avaliar uma amostra, para poder fazer testes estatísticos ou modelos em geral, precisamos nos certificar de que a população está balanceada.
+</p>
+```{r, echo=FALSE}
+#install.packages("dplyr", dependencies = TRUE)
+library(dplyr)
+df<-df %>% replace(is.na(.), 0)
+df%>%
+  group_by(tem_seguro_imobiliario)%>%
+  summarise(n())
+```
+## Análise visual entre Seguro vs não seguro
+```{r, echo=FALSE}
+barplot(prop.table(table(df$tem_seguro_imobiliario)),
+        names.arg = c('Sem Seguro', 'Possui Seguro'),
+        ylab = 'Quantidade de Clientes', main="Seguro vs Sem Seguro", col='light pink', ylim = c(0,1.0))
+```
+# XGBoost
+```{r}
+library(caret)
+library(readr)
+library(dplyr)
+# remover dados nulos
+df<-df %>% replace(is.na(.), 0)
+#transformar variáveis cetgóricas em colunas
+colunas<-names(df[, sapply(df, is.character)])
+variaveis.dummies <- dummyVars(" ~ .", data=df[,colunas])
+df.dummy <- data.frame(predict(variaveis.dummies, newdata=df[,colunas]))
+df<-cbind(df %>% select(-colunas),df.dummy)
+#gerenciar memória
+rm(df.dummy,variaveis.dummies,colunas)
+# grupo sem seguro balanceado com sorteio aleatório
+sem.seguro<-df%>%
+  filter(tem_seguro_imobiliario==0)%>%
+  sample_n(273)
+#grupo com seguro
+com.seguro<-df%>%
+  filter(tem_seguro_imobiliario==1)
+df<-rbind(sem.seguro,com.seguro)
+rm(sem.seguro)
+rm(com.seguro)
+#criação do arquivo treino e teste com 75% e 25%
+amostra <- floor(0.75 * nrow(df))
+set.seed(2021)
+treino.indice <- sample(seq_len(nrow(df)), size = amostra)
+
+treino <- df[treino.indice, ]
+teste <- df[-treino.indice, ]
+rm(df, amostra,treino.indice)
+```
+
+```{r}
+#install.packages("xgboost", dependencies=TRUE)
+```
+
+```{r}
+#preparar para o XGBoost
+x.treino<-treino%>%select(-tem_seguro_imobiliario)
+y.treino<-treino$tem_seguro_imobiliario
+x.teste<-teste%>%select(-tem_seguro_imobiliario)
+y.teste<-teste$tem_seguro_imobiliario
+treino <- xgboost::xgb.DMatrix(data = as.matrix(x.treino), label= as.matrix(y.treino))
+teste <- xgboost::xgb.DMatrix(data = as.matrix(x.teste), label= as.matrix(y.teste))
+```
+
+```{r}
+#treino do modelo com parâmetros básicos
+parametros.tunning <- list(booster = "gbtree", objective = "binary:logistic", eta=0.3, gamma=0, max_depth=6, min_child_weight=1, subsample=1, colsample_bytree=1)
+
+modelo<- xgboost::xgb.train(params = parametros.tunning, data = treino, nrounds = 291, watchlist = list(val=teste,train=treino), print_every_n = 10, 
+                   early_stop_round = 10, maximize = F , eval_metric = "error")
+```
+```{r}
+plot(modelo$evaluation_log$iter,modelo$evaluation_log$val_error,type = "l",
+     xlab="Interação Nº",
+     ylab = "Erro do arquivo Teste",
+     main="Decidir ponto de corte para evitar overfitting")
+```
+</br>
+<p>
+Olhando o gráfico acima, podemos definir o ponto de corte em torno de 30, como 
+ideal para evitar overfitting.
+</p>
+</br>
+```{r}
+#treino do modelo com parâmetros básicos
+parametros.tunning <- list(booster = "gbtree", objective = "binary:logistic", 
+                           eta=0.3, gamma=0, max_depth=6, min_child_weight=1, subsample=1, colsample_bytree=1)
+
+modelo<- xgboost::xgb.train(params = parametros.tunning, data = treino, 
+                            nrounds = 30, watchlist = list(val=teste,train=treino), print_every_n = 10, 
+                   early_stop_round = 10, maximize = F , eval_metric = "error")
+```
+
+```{r}
+ previsoes<-predict(modelo, as.matrix(x.treino))
+```
+
+
+```{r}
+confusionMatrix(table(ifelse(previsoes <= 0.5, 0, 1), y.treino))
+```
+</br>
+<p>
+O modelo chegou a classificar perfeitamente e justamente por isso não será feita
+a otimização do modelo com tunning.
+</p>
+</br>
+```{r}
+plot(modelo$evaluation_log$iter,modelo$evaluation_log$val_error,type = "l",
+     xlab="Interação Nº",
+     ylab = "Erro do arquivo Teste",
+     main="Decidir ponto de corte para evitar overfitting")
+```
+</br>
+<p>A partir desse ponto, ocorreria o overfitting.</p>
+</br>
+```{r}
+library(pROC)
+curva.dados <- roc(y.treino,previsoes,
+            smoothed = TRUE,
+            # arguments for ci
+            ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+            # arguments for plot
+            plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+            print.auc=TRUE, show.thres=TRUE)
+
+
+sens.ci <- ci.se(curva.dados)
+plot(sens.ci, type="shape", col="lightblue")
+plot(sens.ci, type="bars")
+```
+# Validação do modelo
+```{r}
+previsoes<-predict(modelo, as.matrix(x.teste))
+confusionMatrix(table(ifelse(previsoes <= 0.5, 0, 1), y.teste))
+```
+</br>
+<p>
+Devido às características gerais dos dados como falta de balanceamento, por 
+exemplo, a performance do modelo está excelente com sensibilidade e 
+especificidade acima de 80%. O kappa de 66% o que mostra uma relação razoável
+entre os arquivos treinos e teste, ou seja, o modelo consegue explicar bem o
+fenômeno do seguro, inclusive, é possível dizer que esse modelo após a validação
+consegue explicar cerca de 83% dos segurados (R quadrado).
+</p>
+</br>
+
+```{r}
+curva.dados <- roc(y.teste,previsoes,
+            smoothed = TRUE,
+            # arguments for ci
+            ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+            # arguments for plot
+            plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+            print.auc=TRUE, show.thres=TRUE)
+
+
+sens.ci <- ci.se(curva.dados)
+plot(sens.ci, type="shape", col="lightblue")
+plot(sens.ci, type="bars")
+```
+</br>
+<p>A métrica acima mostra uma excelente capacidade de classificação e predição 
+podendo ser usado no mundo real com um bom poder de predição.
+</p>
+</br>
+```{r}
+importancia<-xgboost::xgb.importance(colnames(x.teste), model = modelo)
+importancia
+```
+
+
+```{r}
+# Variáveis mais importantes para o Perfil
+xgboost::xgb.plot.importance(importancia, rel_to_first = TRUE, 
+                    xlab = "Variáveis importantes para definir o perfil")
+```
+</br>
+<p>
+Portanto, as 9 variáveis mais importantes para escolher um perfil são:
+</p>
+<ul>
+  <li>valor_fundos_bancarios</li>
+  <li>cc_saldo_atual</li>
+  <li>retirada_mensal</li>
+  <li>qtd_trans_web</li>
+  <li>qtd_pag_automovel</li>
+  <li>valor_fin_imobiliario</li>
+  <li>salario</li>
+  <li>ltv</li>
+  <li>idade</li>
+</ul>
+
+# Teste de Hipótese
+```{r}
+chisq.test(x.teste$idade, y.teste)
+```
+</br>
+O modelo é aceitável do ponto de vista estatístico.
+</br></br>
+![Modelo Stacking](stacking.png)
+</br></br>
+<p style="font-size:14px;">Stacking</p>
+</br>
+```{r, echo=FALSE}
+load("model_tiago.RData")
+load("modelo.RData")
+```
+</br>
+Será utilizado uma combinação dos três modelos para extrair o melhor de cada um.
+</br>
+```{r}
+#combinação dos três
+pred1<-predict(modelo, as.matrix(x.treino))
+pred1<-ifelse(pred1 <= 0.5, 0, 1)
+pred2<-predict(modelo1, x.treino)
+pred2<-ifelse(pred2 <= 0.5, 0, 1)
+pred3<-predict(modelo2, x.treino)[,2]
+pred3<-ifelse(pred3 <= 0.5, 0, 1)
+tab<-data.frame(pred1,pred2,pred3)
+#teste
+pred1<-predict(modelo, as.matrix(x.teste))
+pred1<-ifelse(pred1 <= 0.5, 0, 1)
+pred2<-predict(modelo1, x.teste)
+pred2<-ifelse(pred2 <= 0.5, 0, 1)
+pred3<-predict(modelo2, x.teste)[,2]
+pred3<-ifelse(pred3 <= 0.5, 0, 1)
+tab1<-data.frame(pred1,pred2,pred3)
+
+treino <- xgboost::xgb.DMatrix(data = as.matrix(tab), label= as.matrix(y.treino))
+teste <- xgboost::xgb.DMatrix(data = as.matrix(tab1), label= as.matrix(y.teste))
+parametros.tunning <- list(booster = "gbtree", objective = "binary:logistic", 
+                           eta=0.3, gamma=0, max_depth=6, min_child_weight=1, subsample=1, colsample_bytree=1)
+
+modelo<- xgboost::xgb.train(params = parametros.tunning, data = treino, 
+                            nrounds = 10, watchlist = list(val=teste,train=treino), print_every_n = 10, 
+                            early_stop_round = 10, maximize = F , eval_metric = "error")
+previsoes<-predict(modelo, as.matrix(tab))
+confusionMatrix(table(ifelse(previsoes <= 0.5, 0, 1), y.treino))
+```
+</br>
+Validação do modelo no arquivo teste:
+</br>
+```{r}
+previsoes<-predict(modelo, as.matrix(tab1))
+confusionMatrix(table(ifelse(previsoes <= 0.5, 0, 1), y.teste))
+```
+```{r}
+curva.dados <- roc(y.teste,previsoes,
+                   smoothed = TRUE,
+                   # arguments for ci
+                   ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+                   # arguments for plot
+                   plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+                   print.auc=TRUE, show.thres=TRUE)
+
+
+sens.ci <- ci.se(curva.dados)
+plot(sens.ci, type="shape", col="lightblue")
+plot(sens.ci, type="bars")
+```
+
+Devido às características gerais dos dados como falta de balanceamento, por 
+exemplo, a performance do modelo está excelente com sensibilidade acima de 80% e 
+especificidade em torno de 60%. O kappa de 50% mostra uma relação mediana
+entre os arquivos treinos e teste, ou seja, o modelo consegue explicar bem o
+fenômeno do seguro, inclusive, é possível dizer que esse modelo após a validação
+consegue explicar cerca de 74% dos segurados (R quadrado).
