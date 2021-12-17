@@ -1,0 +1,170 @@
+{
+  "A": {
+    "Tid": "A",
+    "start": 0,
+    "duration": 1,
+    "end": 0,
+    "responsible": "Responsible1",
+    "pred": ["START"]
+  },
+  "B": {
+    "Tid": "B",
+    "start": 0,
+    "duration": 2,
+    "end": 0,
+    "responsible": "Responsible2",
+    "pred": ["START"]
+  },
+  "C": {
+    "Tid": "C",
+    "start": 0,
+    "duration": 1,
+    "end": 0,
+    "responsible": "Responsible3",
+    "pred": ["A"]
+  },
+  "D": {
+    "Tid": "D",
+    "start": 0,
+    "duration": 2,
+    "end": 0,
+    "responsible": "Responsible4",
+    "pred": ["C"]
+  },
+  "E": {
+    "Tid": "E",
+    "start": 0,
+    "duration": 6,
+    "end": 0,
+    "responsible": "Responsible5",
+    "pred": ["B", "C"]
+  },
+  "F": {
+    "Tid": "F",
+    "start": 0,
+    "duration": 10,
+    "end": 0,
+    "responsible": "Responsible6",
+    "pred": ["D"]
+  },
+  "G": {
+    "Tid": "G",
+    "start": 0,
+    "duration": 3,
+    "end": 0,
+    "responsible": "Responsible7",
+    "pred": ["F"]
+  },
+  "H": {
+    "Tid": "H",
+    "start": 0,
+    "duration": 1,
+    "end": 0,
+    "responsible": "Responsible8",
+    "pred": ["G"]
+  },
+    "I": {
+    "Tid": "I",
+    "start": 0,
+    "duration": 1,
+    "end": 0,
+    "responsible": "Responsible9",
+    "pred": ["F"]
+  },
+    "J": {
+    "Tid": "J",
+    "start": 0,
+    "duration": 5,
+    "end": 0,
+    "responsible": "Responsible10",
+    "pred": ["E", "H"]
+  },
+    "K": {
+    "Tid": "K",
+    "start": 0,
+    "duration": 2,
+    "end": 0,
+    "responsible": "Responsible11",
+    "pred": ["I"]
+  },
+    "L": {
+    "Tid": "L",
+    "start": 0,
+    "duration": 1,
+    "end": 0,
+    "responsible": "Responsible12",
+    "pred": ["F", "J"]
+  },
+    "M": {
+    "Tid": "M",
+    "start": 0,
+    "duration": 2,
+    "end": 0,
+    "responsible": "Responsible13",
+    "pred": ["F"]
+  },
+    "N": {
+    "Tid": "N",
+    "start": 0,
+    "duration": 4,
+    "end": 0,
+    "responsible": "Responsible14",
+    "pred": ["L", "M"]
+  },
+    "O": {
+    "Tid": "O",
+    "start": 0,
+    "duration": 2,
+    "end": 0,
+    "responsible": "Responsible15",
+    "pred": ["G", "J"]
+  },
+    "P": {
+    "Tid": "P",
+    "start": 0,
+    "duration": 2,
+    "end": 0,
+    "responsible": "Responsible16",
+    "pred": ["O"]
+  },
+    "Q": {
+    "Tid": "Q",
+    "start": 0,
+    "duration": 1,
+    "end": 0,
+    "responsible": "Responsible17",
+    "pred": ["I", "P"]
+  },
+    "R": {
+    "Tid": "R",
+    "start": 0,
+    "duration": 7,
+    "end": 0,
+    "responsible": "Responsible18",
+    "pred": ["P"]
+  },
+    "S": {
+    "Tid": "S",
+    "start": 0,
+    "duration": 7,
+    "end": 0,
+    "responsible": "Responsible19",
+    "pred": ["I", "N"]
+  },
+    "T": {
+    "Tid": "T",
+    "start": 0,
+    "duration": 3,
+    "end": 0,
+    "responsible": "Responsible20",
+    "pred": ["S"]
+  },
+  "END": {
+    "Tid": "END",
+    "start": 0,
+    "duration": 0,
+    "end": 0,
+    "responsible": "Responsible",
+    "pred": ["T"]
+  }
+}
