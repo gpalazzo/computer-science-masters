@@ -1,0 +1,381 @@
+---
+title: "Atividade 4: 5ª Análise(Modelo Teórico)"
+author: "Grupo Cerrado: Guilherme Palazzo, Tiago Gomes, Luiz, Williamson Brigido, Carlos Eduardo e Aline Rodrigues"
+date: "24/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Lendo o arquivo
+```{r}
+#install.packages("readr", dependencies = TRUE)
+library(readr)
+df <- read_csv("dataset(V1).csv")
+```
+# Tipo de Abordagem
+
+Como não foi especificada qual tipo de abordagem deveríamos ter, escolhi fazer 
+uma análise exploratória dos dados e assumir que esses dados surgiram de 
+um experimento e que desse experimento devemos extrair compreensões para 
+uma determinada estratégia. Essa estratégia seria aumentar a taxa de clientes 
+que contratam seguros e traçar um perfil desse cliente. Para isso, adorei um 
+teste A/B. com um modelo frequentista para dados de variáveis numéricas 
+contínuas e modelo Bayesiano para variáveis categóricas. O pressuposto aqui é 
+que as todos os clientes possuem a mesma probabilidade a priori de 
+serem selecionados.
+
+# Análise exploratória 
+
+## Tipos de dados
+```{r}
+str(df)
+```
+## Sumário
+```{r, echo=TRUE}
+summary(df)
+```
+## Balanço da população
+<p>
+No geral, quando vamos avaliar uma amostra, para poder fazer testes estatísticos ou modelos em geral, precisamos nos certificar de que a população está balanceada.
+</p>
+```{r, echo=FALSE}
+#install.packages("dplyr", dependencies = TRUE)
+library(dplyr)
+df<-df %>% replace(is.na(.), 0)
+df%>%
+  group_by(tem_seguro_imobiliario)%>%
+  summarise(n())
+```
+## Análise visual entre Seguro vs não seguro
+```{r, echo=FALSE}
+barplot(prop.table(table(df$tem_seguro_imobiliario)),
+        names.arg = c('Sem Seguro', 'Possui Seguro'),
+        ylab = 'Quantidade de Clientes', main="Seguro vs Sem Seguro", col='light pink', ylim = c(0,1.0))
+```
+<p>
+É possível verificar que as amostras não estão balanceadas. Vamos ver a distribuição desses fatores nas demais variáveis independentes.
+</p>
+## Balancendo a amostra
+```{r, echo=FALSE}
+#amostra aleatória entre os que não possuem seguro (balancear os dados)
+sem.seguro<-df%>%
+  filter(tem_seguro_imobiliario==0)%>%
+  sample_n(273)
+com.seguro<-df%>%
+  filter(tem_seguro_imobiliario==1)
+df<-rbind(sem.seguro,com.seguro)
+```
+
+
+```{r}
+library(tidyverse)
+library(tidybayes)
+```
+## Observação Importante
+Observação: Toda base teórica para o cálculo abaixo foi retirado desse <a href="https://www.terrapub.co.jp/journals/jjss/pdf/4002/40020265.pdf">artigo científico</a>.
+```{r}
+Calcular.Probabilidade.Ter.Seguro<-function(frequencia.de.A,
+                                            frequencia.de.B){
+tema.cores <- theme_bw(base_family="Calibri") + 
+  theme(legend.position = "top",
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 12),
+        plot.title = element_text(size = 18, face = "bold"),
+        plot.subtitle = element_text(size = 12, face = "italic", margin = margin(b=12)),
+        plot.caption = element_text(size = 10),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank())
+
+theme_set(tema.cores)
+amostra.de.A <- 273
+alphaA <- 1
+betaA <- 1
+amostra.de.B <- 273
+alphaB <- 1
+betaB <- 1
+numero.de.simulacoes <- 50000
+alpha.de.A.posteriori <- alphaA + frequencia.de.A; beta.de.A.posteriori <- betaA + amostra.de.A - frequencia.de.A
+alpha.de.B.posteriori <- alphaB + frequencia.de.B; beta.de.B.posteriori <- betaB + amostra.de.B - frequencia.de.B
+probabilidade.de.A <- rbeta(numero.de.simulacoes, alpha.de.A.posteriori, beta.de.A.posteriori)
+probabilidade.de.B <- rbeta(numero.de.simulacoes, alpha.de.B.posteriori, beta.de.B.posteriori)
+
+probabilidade.de.B.menor.probabilidade.de.A.definicao <- probabilidade.de.B - probabilidade.de.A %>% as_tibble()
+probabilidade.de.B.menor.probabilidade.de.A.definicao_ci <- probabilidade.de.B.menor.probabilidade.de.A.definicao %>%
+  mean_qi(value*100)
+probabilidade.de.B.menor.probabilidade.de.A.definicao_prob <- sum(probabilidade.de.B.menor.probabilidade.de.A.definicao > 0) / numero.de.simulacoes
+probabilidade.de.B.menor.probabilidade.de.A.definicao_Fator.de.Bayes <- probabilidade.de.B.menor.probabilidade.de.A.definicao_prob / (1 - probabilidade.de.B.menor.probabilidade.de.A.definicao_prob)
+
+print("Fator de Bayes:")
+print(probabilidade.de.B.menor.probabilidade.de.A.definicao_Fator.de.Bayes)
+media.A.posteriori <- alpha.de.A.posteriori / (alpha.de.A.posteriori + beta.de.A.posteriori)
+media.B.posteriori <- alpha.de.B.posteriori / (alpha.de.B.posteriori + beta.de.B.posteriori)
+differenca_aproximada <- media.A.posteriori * (1 - media.A.posteriori) / (alpha.de.A.posteriori + beta.de.A.posteriori + 1) +
+  media.B.posteriori * (1 - media.B.posteriori) / (alpha.de.B.posteriori + beta.de.B.posteriori + 1)
+
+probabilidade.de.B.menor.probabilidade.de.A.definicao_approx_ci <- tibble(mean = media.B.posteriori - media.A.posteriori,
+                                lower = media.B.posteriori - media.A.posteriori - qnorm(0.975)*sqrt(differenca_aproximada),
+                                upper = media.B.posteriori - media.A.posteriori + qnorm(0.975)*sqrt(differenca_aproximada))
+print("Intervalo de 95%:")
+#print(probabilidade.de.B.menor.probabilidade.de.A.definicao_ci)
+print("Valor Esperado:")
+print(100*probabilidade.de.B.menor.probabilidade.de.A.definicao_approx_ci)
+probabilidade.de.B.menos.probabilidade.de.A.titulo <- probabilidade.de.A<-paste0("A P(seguro) é maior do que P(Sem Seguro) em ~", round(probabilidade.de.B.menor.probabilidade.de.A.definicao_prob*100, digits = 0),"% das vezes.")
+probabilidade.de.B.menor.probabilidade.de.A.definicao1 <- probabilidade.de.A<-paste0("É a distribuição posterior da diferença entre as duas proporções, baseado em ",numero.de.simulacoes, " simulações. A amostra é de ",amostra.de.A + amostra.de.B,"  clientes totais, com distribuição a priore uniforme.")
+probabilidade.de.B.menor.probabilidade.de.A.definicao2 <- probabilidade.de.A<-paste0("Ambas as proporções são uniforme, Beta(1, 1), em torno de zero. Dados: Sem Seguro: ",frequencia.de.A, " clientes, ", amostra.de.A ," Com seguro: ",frequencia.de.B, " clientes, ", amostra.de.B)
+print(probabilidade.de.B.menos.probabilidade.de.A.titulo)
+print(probabilidade.de.B.menor.probabilidade.de.A.definicao1)
+print(probabilidade.de.B.menor.probabilidade.de.A.definicao2)
+probabilidade.de.B.menor.probabilidade.de.A.definicao %>%
+  ggplot(aes(x = value*100,
+             fill = stat(x > 0))) +
+  stat_halfeye(point_interval = mean_qi) +
+  labs(title = probabilidade.de.B.menos.probabilidade.de.A.titulo,
+       #subtitle = probabilidade.de.B.menor.probabilidade.de.A.definicao1,
+       x = "Diferença aritmética entre B e A [pontos percentuais]",
+       y = "") + 
+  scale_fill_discrete(name = "Diferença (B menos A)",
+                      labels = c("Menor do que 0", "Mais do que 0"))
+}
+```
+
+## Análise entre Saldo Atual e Seguro
+```{r, echo=FALSE}
+#install.packages("ggplot2", dependencies = TRUE)
+library(ggplot2)
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(cc_saldo_atual), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Saldo em Conta' , x = 'Tem Seguro', y='Saldo Atual') +  theme_classic()
+```
+Olhando  gráfico acima podemos ver que o grupo sem seguro possui um saldo atual com maior variância do que o outro grupo. ALém disso, as médias parecem ser aproximadamente iguais, assim como o primeiro quartil. Contudo, isso por si só não quer dizer que estatisticamente seja significante. Para isso, precisamos comparar os dois grupos e faremos isso por meio da média:
+```{r,echo=FALSE}
+t.test(sem.seguro$cc_saldo_atual,com.seguro$cc_saldo_atual)
+```
+Baseados no resultado acima, podemos dizer com 95% de confiança que em média, os saldos atuais são diferentes entre os dois grupos, ou seja, rejeitamos a hipótese de que sejam iguais.Contudo, essa variável explica melhor quem não possui seguro do que quem tem seguro e por isso será descartado..
+## Análise entre Saldo Médio e Seguro
+```{r}
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(cc_saldo_medio), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Saldo Médio' , x = 'Tem Seguro', y='Saldo Médio') +  theme_classic()
+```
+Nesse caso, mesmo visualmente é difícil comparar os dois grupos com relação à média. Contudo, ao que tudo indica, eles são similares entre si. Então, faremos uma comparação estatística:
+```{r,echo=FALSE}
+t.test(sem.seguro$cc_saldo_medio,com.seguro$cc_saldo_medio)
+```
+Baseados no resultado acima, não podemos rejeitar a hipótese de que sejam iguais. 
+Portanto, os dois grupos não são estatisticamente diferentes em relação ao saldo médio.
+## Análise entre o Limite de Cartão de Crédito e Seguro
+```{r}
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(credit_card_limite), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Limite de Cartão de Crédito' , x = 'Tem Seguro', y='Limite de Cartão de Crédito') +  theme_classic()
+```
+Aqui nesse caso, apesar do primeiro quartil ser menor em quem tem seguro, as médias aparentemente são iguais. Novamente, testaremos a hipótese de que a média desses dois grupos é igual.
+```{r,echo=FALSE}
+t.test(sem.seguro$credit_card_limite,com.seguro$credit_card_limite)
+```
+Baseados nos valores acima, não podemos rejeitar a hipṕtese de que a média entre eles é igual, em relação ao limite de cartão de crédito.
+
+## Análise entre Quantidade de Financiamento imobiliário e Seguro
+```{r}
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(qtd_fin_imobiliario), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Qtdade de Financiamento Imobiliário' , x = 'Tem Seguro', y='Qtdade de Financiamento Imobiliário') +  theme_classic()
+```
+O grupo que não possui seguro possui uma variância maior de quantidade de financiamentos do que o grupo que possui seguros, contudo, a média parece ser igual. Vamos ao teste estatístico para saber:
+
+```{r}
+t.test(sem.seguro$qtd_fin_imobiliario,com.seguro$qtd_fin_imobiliario)
+```
+Baseados nos valores acima, não podemos concluir de que a média desses dois grupos é diferente, ou seja, não rejeitamos a hipótese nula.
+
+## Análise entre Quantidade Mensal de Cheques e Seguro
+```{r}
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(qtd_mensal_cheques), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Qtdade Mensal de Cheques' , x = 'Tem Seguro', y='Qtdade Mensal de Cheques') +  theme_classic()
+```
+
+Baseados no gráfico acima, aparentemente a média de cheques mensais do grupo que possui seguro é maior, além dos quartis serem maiores idem. Vamos testar a hipótese de que a média é igual:
+```{r}
+t.test(sem.seguro$qtd_mensal_cheques,com.seguro$qtd_mensal_cheques)
+```
+Baseados no teste de Welch, a hipótese de que os dois grupos possuem a mesma média foi rejeitada. O grupo que possui seguros possui em média uma quantidade de cheques mensais maior.
+
+## Análise entre Quantidade Pagamentos do Automóvel e Seguro
+```{r}
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(qtd_pag_automovel), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Quantidade Pagamentos do Automóvel' , x = 'Tem Seguro', y='Quantidade Pagamentos do Automóvel') +  theme_classic()
+```
+Os gráficos mostram dois grupos com valores próximos. Vamos verificar o teste estatístico:
+
+```{r}
+t.test(sem.seguro$qtd_pag_automovel,com.seguro$qtd_pag_automovel)
+```
+Baseados no teste acima, não devemos rejeitar a hipótese nula. Os dois grupos são iguais, em relação à média.
+
+## Análise entre Quantidade de Transações ATM e Seguro
+```{r}
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(qtd_trans_atm), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Quantidade de Transações ATM' , x = 'Tem Seguro', y='Quantidade de Transações ATM') +  theme_classic()
+```
+Aparentemente os grupos são bem distintos entre si, com relação a essa variável. Vamos verificar o teste estatístico.
+```{r}
+t.test(sem.seguro$qtd_trans_atm,com.seguro$qtd_trans_atm)
+```
+Baseados no teste acima, podemos rejeitar a hipótese nula de que sejam iguais. O grupo que possui seguro possui em média mais transações em atm do que o outro grupo.
+
+## Análise entre Quantidade de Transações Kiosk e Seguro
+```{r}
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(qtd_trans_kiosk), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Quantidade de Transações Kiosk' , x = 'Tem Seguro', y='Quantidade de Transações Kiosk') +  theme_classic()
+``` 
+Baseados no gráfico acima, podemos inferir que os dois grupos sejam semelhantes entre si. Vamos testar a hipótese:
+
+```{r}
+t.test(sem.seguro$qtd_trans_kiosk,com.seguro$qtd_trans_kiosk)
+```
+Com o teste acima não podemos rejeitar a hipótese nula, ou seja, os grupos são iguais na média.
+
+## Análise entre Quantidade de Transações Teller e Seguro
+```{r}
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(qtd_trans_teller), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Quantidade de Transações Teller' , x = 'Tem Seguro', y='Quantidade de Transações Teller') +  theme_classic()
+``` 
+Aparentemente, eles são diferentes entre si. Vamos para o teste estatístico:
+```{r}
+t.test(sem.seguro$qtd_trans_teller,com.seguro$qtd_trans_teller)
+```
+Baseados no teste estatístico, podemos rejeitar a hipótese nula. O grupo com seguros de fato possui, em média, mais transações teller.
+```{r}
+for (coluna in colnames(select_if(df, is.numeric))){
+print(coluna)
+if (coluna!="tem_seguro_imobiliario"){
+print(t.test(sem.seguro[,coluna],com.seguro[,coluna]))
+}
+}
+```
+Baseado nos resultados acima, as variáveis retirada mensal, valor_fundos_bancarios,
+n_dependentes, proprietario_casa, proprietario_veiculo, tem_filho. Para compreender a relação dessas variáveis, vamos ver os gráficos:
+
+```{r}
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(retirada_mensal), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Retirada Mensal' , x = 'Tem Seguro', y='Retirada Mensal') +  theme_classic()
+```
+O gráfico acima realmente mostra que é uma variável relevante ao processo, especialmente acima de 4.
+```{r}
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(valor_fundos_bancarios), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Valor Fundos Bancários' , x = 'Tem Seguro', y='Valor Fundos Bancários') +  theme_classic()
+```
+Os valores de fundos bancários acima de 7.5 é muito importante para aumentar as chances de seguro.
+
+```{r}
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(n_dependentes), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Número de Dependentes' , x = 'Tem Seguro', y='Número de Dependentes') +  theme_classic()
+```
+Apesar do número de dependentes ser relevante ao processo, os gráficos são muito similares, justamente porque provavelmente a maioria dos clientes possuem aproximadamente o mesmo número de filhos. Portanto, ao delimitar um filtro acima ou igual a dois filhos, por exemplo, o funil ficaria muito estreito. Abaixo de dois, essa variável adicionará muito ruído. Portanto, sugiro retirar essa variável do processo.
+
+```{r}
+ggplot(data = df, aes(x = factor(tem_seguro_imobiliario) ,y = log1p(proprietario_casa), fill = factor(tem_seguro_imobiliario))) + geom_boxplot(show.legend = FALSE) +labs(title= 'Relação de Seguro e Proprietário Casa' , x = 'Tem Seguro', y='Proprietário Casa') +  theme_classic()
+```
+Novamente, mesmo que essa variável seja relvante para diferenciar quem possui seguro de quem não possui, ela parece explicar mais quem não possui seguro. Logo, minha sugestão é de descartar essa variável. Queremos aquela que explique melhor quem possui seguro.
+
+```{r}
+df%>%group_by(tem_seguro_imobiliario, proprietario_veiculo)%>%summarise(n())
+```
+
+```{r}
+#basta comparar os dois grupos
+Calcular.Probabilidade.Ter.Seguro(253,268)
+```
+Logo, quem possui veículo deve ser incluído na campanha de marketing.
+
+```{r}
+df%>%group_by(tem_seguro_imobiliario, tem_filho)%>%summarise(n())
+```
+
+```{r}
+Calcular.Probabilidade.Ter.Seguro(128,159)
+```
+Ter filho é uma variável muito relvante e, portanto, quem tem filho deve ser incluída na campanha.
+
+```{r, echo=FALSE}
+for (coluna in unique(df$profissao)){
+  temp<-df%>%filter(profissao==coluna)
+  sem<-temp%>%filter(tem_seguro_imobiliario==0)
+  com<-temp%>%filter(tem_seguro_imobiliario==1)
+  print("###################################################################")
+  print(paste0("Profissão: ", coluna))
+  Calcular.Probabilidade.Ter.Seguro(dim(sem)[1],dim(com)[1])
+  print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+}
+```
+Determinei um ponto de corte em 70%. Baseado nas respostas acima, temos que as profissões mais relevantes para o 
+processo são: Programmer/developer (100%), it staff(96%), lab technician(87%),
+dba(91%), administrator (81%), prof-9(82%), law enforcement officer(81%), 
+medical doctor (77%), prof-1(89%), childcare worker (89%), publisher(98%),
+prof-65 (75%), prof-8 (100%), prof-45 (88%), prof-32 (87%), prof-20 (88%),
+prof-56 (75%), prof-16 (97%), prof-59 (88%), prof-26 (75%), prof-17 (75%),
+prof-3 (75%), prof-49 (75%).
+```{r, echo=FALSE}
+for (coluna in unique(df$classe_ltv)){
+  temp<-df%>%filter(classe_ltv==coluna)
+  sem<-temp%>%filter(tem_seguro_imobiliario==0)
+  com<-temp%>%filter(tem_seguro_imobiliario==1)
+  print("###################################################################")
+  print(paste0("Classe LTV: ", coluna))
+  Calcular.Probabilidade.Ter.Seguro(dim(sem)[1],dim(com)[1])
+  print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+}
+```
+Baseado nas respostas acima, com um ponto de corte em 70%, as classes ltv mais relvantes ao processo são: high (93%),low (74%).
+
+```{r, echo=FALSE}
+for (coluna in unique(df$estado)){
+  temp<-df%>%filter(estado==coluna)
+  sem<-temp%>%filter(tem_seguro_imobiliario==0)
+  com<-temp%>%filter(tem_seguro_imobiliario==1)
+  print("###################################################################")
+  print(paste0("Estado: ", coluna))
+  Calcular.Probabilidade.Ter.Seguro(dim(sem)[1],dim(com)[1])
+  print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+}
+```
+Baseados nos resultados acima e tendo como ponto de corte em 70%, os estados que devem estar inclusos na campanhas são: mn (94%), fl (97%), or (81%), dc (99%), wi (97%), nc (93%), oh (97%), mo (75%).
+```{r, echo=FALSE}
+for (coluna in unique(df$estado_civil)){
+  temp<-df%>%filter(estado_civil==coluna)
+  sem<-temp%>%filter(tem_seguro_imobiliario==0)
+  com<-temp%>%filter(tem_seguro_imobiliario==1)
+  print("###################################################################")
+  print(paste0("Estado Civil: ", coluna))
+  Calcular.Probabilidade.Ter.Seguro(dim(sem)[1],dim(com)[1])
+  print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+}
+```
+Baseados nos resultados acima e tendo como ponto de corte 70%, os divorciados (100%) e vúvos (79%) deveriam estar inclusos na campanha de marketing.
+
+```{r, echo=FALSE}
+for (coluna in unique(df$regiao)){
+  temp<-df%>%filter(regiao==coluna)
+  sem<-temp%>%filter(tem_seguro_imobiliario==0)
+  com<-temp%>%filter(tem_seguro_imobiliario==1)
+  print("###################################################################")
+  print(paste0("Região: ", coluna))
+  Calcular.Probabilidade.Ter.Seguro(dim(sem)[1],dim(com)[1])
+  print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+}
+```
+Baseados no resultado acima e com um ponto de corte em 70%, as regiões que deveriam estar inclusas na campanha são: nordeste (70%), sul (97%).
+
+```{r, echo=FALSE}
+for (coluna in unique(df$sexo)){
+  temp<-df%>%filter(sexo==coluna)
+  sem<-temp%>%filter(tem_seguro_imobiliario==0)
+  com<-temp%>%filter(tem_seguro_imobiliario==1)
+  print("###################################################################")
+  print(paste0("Sexo: ", coluna))
+  Calcular.Probabilidade.Ter.Seguro(dim(sem)[1],dim(com)[1])
+  print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+}
+```
+Baseados nos resultados acima e com um ponto de corte em 70%, o sexo feminino (100%) deveria ser o alvo da campanha.
+
+Não utilizarei os nomes ou sobrenomes, porque não foi especificado se a campanha deveria ser direcionada ao portfólios de clientes ou a um público mais genérico. Portanto, deixarei a campanha mais genérica nesse sentido.
+# Conclusao
+O perfil desejado para a campanha de marketing para seguros deve ter acima de 
+uma quantidade mensal de cheques, acima de 1 transação de ATM, acima de uma 
+transação Teller, acima de 4 retiradas mensais, acima de 7.5 de valor nos fundos bancários, possui veículo, tem filhos, tenha uma as profissões listadas aqui (Programmer/developer (100%), it staff(96%), lab technician(87%), dba(91%), administrator (81%), prof-9(82%), law enforcement officer(81%), 
+medical doctor (77%), prof-1(89%), childcare worker (89%), publisher(98%), 
+prof-65 (75%), prof-8 (100%), prof-45 (88%), prof-32 (87%), prof-20 (88%), 
+prof-56 (75%), prof-16 (97%), prof-59 (88%), prof-26 (75%), prof-17 (75%), 
+prof-3 (75%), prof-49 (75%)), tenha classe ltv high(93%) ou low (74%), 
+seja de um desses estados aqui (mn (94%), fl (97%), or (81%), dc (99%), 
+wi (97%), nc (93%), oh (97%), mo (75%)), seja divorciado (100%) ou 
+viúvo (79%), seja do nordeste (70%) ou do sul (97%) e que seja do sexo feminino.
+
