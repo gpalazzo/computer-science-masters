@@ -1,0 +1,13 @@
+# conjunto de máquinas
+param MAQ := 2;
+
+# conjuntos de itens
+param ITENS := 5;
+
+# conjunto dos custos de preparação
+param k := 1 40 2 35;
+
+# matriz de custo de processamento de cada item em cada máquina
+param C		:	1	2	3	4	5	:=
+			1	28	50	49	31	33
+			2	20	16	63	27	41;

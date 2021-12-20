@@ -1,0 +1,34 @@
+# conjunto de jogadores
+param JOG := 7;
+
+# conjuntos de habilidades
+param HAB := 4;
+
+# conjunto de posições
+param POS := 3;
+
+# matriz do valor das habilidades de cada jogador
+param S		:	1	2	3	4	:=
+			1	3	3	1	3
+			2	2	1	3	2
+			3	2	3	2	2
+			4	1	3	3	1
+			5	3	3	3	3
+			6	3	1	2	3
+			7	3	2	2	1;
+			
+# matriz de booleanos se um jogador pode ocupar determinada posição
+# 1: ataque
+# 2: centro
+# 3: defesa
+param B		:	1	2	3	:=
+			1	0	0	1
+			2	0	1	0
+			3	1	0	1
+			4	1	1	0
+			5	1	0	1
+			6	1	1	0
+			7	1	0	1;
+			
+			
+			
