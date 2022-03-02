@@ -1,8 +1,154 @@
 version: '3'
 
+x-airflow-common:
+  &airflow-common
+  build:
+    context: ./po201_etl
+    dockerfile: Dockerfile
+  env_file:
+    - ./po201_etl/airflow_base.env
+  volumes:
+    - ./po201_etl/conf:/opt/airflow/conf
+    - ./po201_etl/data:/opt/airflow/data
+    - ./po201_etl/plugins:/opt/airflow/plugins
+    - ./po201_etl/src:/opt/airflow/src
+  user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-50000}"
+  depends_on:
+    airflow-redis:
+      condition: service_healthy
+    airflow-postgres:
+      condition: service_healthy
+  networks:
+    - po201_network
+
 services:
-  final_project_ipo:
-    build: .
-    container_name: final_project_ipo
-#    volumes:
-#      - postgres-db-volume:/var/lib/postgresql/data
+  airflow-postgres:
+    image: postgres:13
+    container_name: po201_airflow_postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-pgsql-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+    restart: always
+    networks:
+      - po201_network
+
+  airflow-redis:
+    image: redis:latest
+    container_name: po201_airflow_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 30s
+      retries: 50
+    restart: always
+    networks:
+      - po201_network
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: po201_airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: po201_airflow_scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  airflow-worker:
+    <<: *airflow-common
+    container_name: po201_airflow_worker
+    command: celery worker
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - 'celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    env_file:
+      - ./po201_etl/airflow_base.env
+      - ./po201_etl/airflow_init.env
+
+  storage-pgsql:
+    image: postgres:13
+    container_name: po201_storage_postgres
+    env_file:
+      - ./po201_storage_sql/pgsql.env
+    ports:
+      - "5433:5432"
+    volumes:
+      - storage-pgsql-volume:/var/lib/postgresql/data
+      - ./po201_storage_sql/pg-init.sql:/docker-entrypoint-initdb.d/pg-init.sql
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "gpalazzo" ]
+      interval: 5s
+      retries: 5
+    restart: always
+    networks:
+      - po201_network
+
+  kedro-model:
+    build:
+      context: ./po201_kedro_model
+      dockerfile: Dockerfile
+    container_name: po201_kedro_model
+    env_file:
+      - ./po201_kedro_model/kedro_base.env
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./po201_kedro_model:/home/kedro
+    restart: always
+    networks:
+      - po201_network
+
+  ampl-model:
+    build:
+      context: ./po201_ampl_model
+      dockerfile: Dockerfile
+    container_name: po201_ampl_model
+    env_file:
+      - ./po201_ampl_model/ampl_base.env
+    ports:
+      - "8889:8888"
+    volumes:
+      - ./po201_ampl_model:/home/ampl
+    restart: always
+    networks:
+      - po201_network
+
+volumes:
+  airflow-pgsql-volume:
+  storage-pgsql-volume:
+
+networks:
+  po201_network:
+    driver: bridge
